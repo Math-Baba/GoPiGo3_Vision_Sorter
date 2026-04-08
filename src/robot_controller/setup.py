@@ -10,22 +10,30 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/robot_controller/web', [
+            'robot_controller/web/index.html',
+            'robot_controller/web/style.css',
+            'robot_controller/web/app.js',
+        ]),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='pi',
     maintainer_email='pi@todo.todo',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='Robot controller for cube sorting',
+    license='Apache-2.0',
     extras_require={
-        'test': [
-            'pytest',
-        ],
+        'test': ['pytest'],
     },
     entry_points={
         'console_scripts': [
             'motion_node = robot_controller.motion_node:main',
             'camera_node = robot_controller.camera_node:main',
+            'gopigo3_driver = robot_controller.gopigo3_driver:main',
+            'cube_detector = robot_controller.cube_detector:main',
+            'cube_strategy = robot_controller.cube_strategy:main',
+            'follow_test = robot_controller.follow_test:main',
+            'arena_map = robot_controller.arena_map:main',
         ],
     },
 )
