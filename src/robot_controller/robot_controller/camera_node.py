@@ -13,13 +13,21 @@ from rclpy.node import Node
 from ament_index_python.packages import get_package_share_directory
 from robot_interfaces.msg import CubeDetection
 
+# ================= CONFIG =================
+
 COLOR_RANGES = {
-    'green':  {'low': [35, 50, 50],   'high': [85, 255, 255],  'bgr': (0, 255, 0)},
-    'yellow': {'low': [20, 100, 100], 'high': [35, 255, 255],  'bgr': (0, 255, 255)},
-    'blue':   {'low': [90, 50, 50],   'high': [130, 255, 255], 'bgr': (255, 100, 0)},
-    'red':    {'low': [0, 120, 70],   'high': [10, 255, 255],  'bgr': (0, 0, 255)},
+    'green':  {'low': [48, 70, 60],  'high': [85, 255, 255],  'bgr': (0, 255, 0)},
+    'blue':   {'low': [90, 70, 60],  'high': [130, 255, 255], 'bgr': (255, 100, 0)},
+    'yellow': {'low': [20, 80, 80],  'high': [48, 255, 255],  'bgr': (0, 255, 255)},
+    'red':    {'low': [0, 80, 80],   'high': [8, 255, 255],   'bgr': (0, 0, 255)},
+    'red2':   {'low': [170, 80, 80], 'high': [179, 255, 255], 'bgr': (0, 0, 255)},
 }
-MIN_AREA = 500
+
+MIN_AREA = 400
+MAX_AREA = 20000 
+
+kernel_open = np.ones((5, 5), np.uint8)
+kernel_close = np.ones((15, 15), np.uint8)
 
 state = {
     'selected_color': None,
@@ -28,6 +36,7 @@ state = {
     'cx': 0,
     'frame_width': 320,
 }
+
 lock = threading.Lock()
 
 WEB_DIR = os.path.join(
@@ -35,56 +44,94 @@ WEB_DIR = os.path.join(
     'web'
 )
 
-def detect_color(frame, color_name):
-    cfg = COLOR_RANGES[color_name]
-    blurred = cv2.GaussianBlur(frame, (7, 7), 0)
-    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+# ================= DETECTION =================
 
+def detect_color(frame, color_name):
+    blurred = cv2.GaussianBlur(frame, (7, 7), 0)
+
+    # CLAHE
+    lab = cv2.cvtColor(blurred, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    l = clahe.apply(l)
+    enhanced = cv2.cvtColor(cv2.merge([l, a, b]), cv2.COLOR_LAB2BGR)
+
+    hsv = cv2.cvtColor(enhanced, cv2.COLOR_BGR2HSV)
+
+    # Rouge (2 plages)
     if color_name == 'red':
-        mask1 = cv2.inRange(hsv, np.array([0, 120, 70]), np.array([10, 255, 255]))
-        mask2 = cv2.inRange(hsv, np.array([170, 120, 70]), np.array([180, 255, 255]))
+        mask1 = cv2.inRange(hsv,
+                            np.array(COLOR_RANGES['red']['low']),
+                            np.array(COLOR_RANGES['red']['high']))
+        mask2 = cv2.inRange(hsv,
+                            np.array(COLOR_RANGES['red2']['low']),
+                            np.array(COLOR_RANGES['red2']['high']))
         mask = cv2.bitwise_or(mask1, mask2)
     else:
-        mask = cv2.inRange(hsv, np.array(cfg['low']), np.array(cfg['high']))
+        cfg = COLOR_RANGES[color_name]
+        mask = cv2.inRange(hsv,
+                           np.array(cfg['low']),
+                           np.array(cfg['high']))
 
-    kernel = np.ones((5, 5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
+    # Nettoyage
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_open)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close)
+    mask = cv2.dilate(mask, kernel_open, iterations=1)
 
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
     best = None
+    best_area = 0
+
     for c in contours:
         area = cv2.contourArea(c)
-        if area > MIN_AREA:
-            if best is None or area > cv2.contourArea(best):
-                best = c
+
+        if MIN_AREA < area < MAX_AREA:
+            x, y, w, h = cv2.boundingRect(c)
+            ratio = w / float(h)
+
+            if 0.4 < ratio < 2.5:
+                if area > best_area:
+                    best = c
+                    best_area = area
 
     if best is not None:
         x, y, w, h = cv2.boundingRect(best)
         cx = x + w // 2
-        cv2.rectangle(frame, (x, y), (x+w, y+h), cfg['bgr'], 2)
+
+        color_draw = COLOR_RANGES[color_name]['bgr']
+
+        cv2.rectangle(frame, (x, y), (x+w, y+h), color_draw, 2)
         cv2.circle(frame, (cx, y + h // 2), 6, (0, 0, 255), -1)
+
         cv2.putText(frame, color_name.upper(), (x, y - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, cfg['bgr'], 2)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color_draw, 2)
+
+        # Direction
         fw = frame.shape[1]
-        cv2.line(frame, (fw // 2, 0), (fw // 2, frame.shape[0]), (100, 100, 100), 1)
+        frame_cx = fw // 2
+
+        if cx < frame_cx - 40:
+            direction = "< GAUCHE"
+        elif cx > frame_cx + 40:
+            direction = "DROITE >"
+        else:
+            direction = "CENTRE"
+
+        cv2.putText(frame, direction, (cx - 30, y + h + 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
+
         return True, cx
+
     return False, 0
 
-def camera_loop(node):
-    cap = None
-    for idx in [0, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 31]:
-        c = cv2.VideoCapture(idx)
-        if c.isOpened():
-            ret, _ = c.read()
-            if ret:
-                cap = c
-                node.get_logger().info(f'Caméra trouvée sur /dev/video{idx}')
-                break
-            c.release()
+# ================= CAMERA =================
 
-    if cap is None:
-        node.get_logger().error('Aucune caméra trouvée !')
+def camera_loop(node):
+    cap = cv2.VideoCapture(0)
+
+    if not cap.isOpened():
+        node.get_logger().error("Impossible d'ouvrir la caméra")
         return
 
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
@@ -100,6 +147,9 @@ def camera_loop(node):
             color = state['selected_color']
             fw = frame.shape[1]
             state['frame_width'] = fw
+
+        # Ligne centrale
+        cv2.line(frame, (fw // 2, 0), (fw // 2, frame.shape[0]), (100, 100, 100), 1)
 
         detected, cx = False, 0
         if color and color in COLOR_RANGES:
@@ -121,6 +171,8 @@ def camera_loop(node):
         time.sleep(0.05)
 
     cap.release()
+
+# ================= WEB =================
 
 class WebHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -176,7 +228,10 @@ class WebHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
 
-    def log_message(self, format, *args): pass
+    def log_message(self, format, *args):
+        pass
+
+# ================= ROS2 =================
 
 class CameraNode(Node):
     def __init__(self):
@@ -192,8 +247,8 @@ def main():
 
     server = HTTPServer(('0.0.0.0', 8080), WebHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    
-    print(WEB_DIR)
+
+    print("WEB_DIR:", WEB_DIR)
 
     rclpy.spin(node)
     rclpy.shutdown()
