@@ -22,7 +22,7 @@ Une interface web permet de visualiser le flux vidéo et de sélectionner dynami
 - Robot GoPiGo3
 - Python 3.8+
 - OpenCV (`opencv-python`)
-- ROS2 (Humble / Rolling recommandé)
+- ROS2 Jazzy
 - Git
 
 ---
