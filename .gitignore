@@ -35,3 +35,10 @@ rosout*
 *.jpeg
 *.png
 *.mp4
+
+src/robot_controller/robot_controller/arena_map.py
+src/robot_controller/robot_controller/cube_detector.py
+src/robot_controller/robot_controller/cube_strategy.py
+src/robot_controller/robot_controller/follow_test.py
+src/robot_controller/robot_controller/gopigo3_driver.py
+src/robot_controller/robot_controller/hsv_calibration.py
