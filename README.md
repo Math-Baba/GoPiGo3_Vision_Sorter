@@ -6,6 +6,8 @@ Le robot détecte des cubes colorés en temps réel grâce à OpenCV et publie l
 
 Une interface web permet de visualiser le flux vidéo et de sélectionner dynamiquement la couleur à détecter.
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 ---
 
 ## Fonctionnalités
